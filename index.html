@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#20231a">
+<title>Service countdown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@700;900&family=Barlow+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --olive: #20231a;
+    --olive-2: #2b2f22;
+    --olive-3: #3a3f2d;
+    --khaki: #ddd3ad;
+    --khaki-dim: #8f8c70;
+    --tape: #e4c14a;
+    --red: #c8462f;
+    --stencil: "Big Shoulders Stencil Display", Impact, sans-serif;
+    --body: "Barlow Condensed", "Arial Narrow", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--olive); color: var(--khaki); }
+  body {
+    font-family: var(--body);
+    font-size: 18px;
+    line-height: 1.35;
+    font-variant-numeric: tabular-nums;
+    min-height: 100vh;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  button { font: inherit; color: inherit; }
+  button:focus-visible, select:focus-visible, input:focus-visible {
+    outline: 2px solid var(--tape); outline-offset: 2px;
+  }
+
+  /* Banner */
+  .banner { position: relative; padding-top: 8px; }
+  .gear {
+    position: absolute; top: 0; right: 0;
+    background: none; border: 1px solid var(--olive-3); border-radius: 6px;
+    padding: 6px 10px; font-size: 15px; color: var(--khaki-dim); cursor: pointer;
+  }
+  .caption { color: var(--khaki-dim); font-size: 16px; margin: 0 0 4px; }
+  .clock {
+    display: flex; align-items: flex-start; gap: 2px;
+    font-family: var(--stencil); font-weight: 900;
+    line-height: .9; letter-spacing: .01em;
+  }
+  .clock .unit { display: flex; flex-direction: column; align-items: center; }
+  .clock .num { font-size: clamp(56px, 18vw, 104px); }
+  .clock .days .num { color: var(--tape); }
+  .clock .sep { font-size: clamp(40px, 13vw, 76px); color: var(--olive-3); padding-top: .12em; }
+  .clock small {
+    font-family: var(--body); font-weight: 500; font-size: 14px;
+    color: var(--khaki-dim); margin-top: 6px;
+  }
+
+  .pct-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 18px; }
+  .pct { font-family: var(--stencil); font-weight: 700; font-size: 44px; line-height: 1; }
+  .pct-row span { color: var(--khaki-dim); font-size: 16px; }
+
+  /* Tape-measure progress */
+  .tape {
+    position: relative; height: 34px; margin-top: 8px;
+    background: var(--olive-2); border-radius: 3px; overflow: hidden;
+  }
+  .tape-used {
+    position: absolute; inset: 0 auto 0 0; width: 0;
+    background:
+      repeating-linear-gradient(90deg, rgba(32,35,26,.55) 0 1px, transparent 1px 10%),
+      repeating-linear-gradient(90deg, rgba(32,35,26,.35) 0 1px, transparent 1px 2%),
+      var(--tape);
+  }
+  .tape-ticks {
+    position: absolute; inset: 0;
+    background:
+      repeating-linear-gradient(90deg, var(--olive-3) 0 1px, transparent 1px 10%);
+    pointer-events: none;
+  }
+  .tape-edge { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--red); }
+
+  /* Menu */
+  .menu {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    margin: 26px 0 14px; border-bottom: 1px solid var(--olive-3);
+  }
+  .menu button {
+    background: none; border: 0; padding: 10px 4px 12px; cursor: pointer;
+    font-size: 18px; font-weight: 600; color: var(--khaki-dim);
+    border-bottom: 3px solid transparent; margin-bottom: -1px;
+  }
+  .menu button[aria-selected="true"] { color: var(--khaki); border-bottom-color: var(--tape); }
+
+  .panel[hidden] { display: none; }
+
+  /* Checkpoints */
+  .list-tools { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--khaki-dim); font-size: 16px; }
+  .link-btn { background: none; border: 0; color: var(--tape); cursor: pointer; padding: 4px 0; font-weight: 600; }
+  .cp-list {
+    height: 58vh; overflow-y: auto; border-radius: 6px;
+    background: var(--olive-2); padding: 4px 12px;
+    scroll-behavior: smooth; overscroll-behavior: contain;
+  }
+  @media (prefers-reduced-motion: reduce) { .cp-list { scroll-behavior: auto; } }
+  .day { padding: 8px 0 6px; border-bottom: 1px solid var(--olive-3); }
+  .day:last-child { border-bottom: 0; }
+  .day h3 { margin: 0 0 2px; font-size: 15px; font-weight: 500; color: var(--khaki-dim); }
+  .cp { display: flex; justify-content: space-between; padding: 3px 0; font-size: 19px; }
+  .cp.past { color: var(--khaki-dim); opacity: .55; }
+  .cp .v { font-weight: 600; }
+  .now {
+    display: flex; justify-content: space-between; align-items: center;
+    margin: 4px -12px; padding: 7px 12px;
+    background: var(--red); color: #fff3e6; font-weight: 600; font-size: 17px;
+  }
+
+  /* Dismissals */
+  .big-figure { font-family: var(--stencil); font-weight: 900; font-size: 96px; line-height: .9; color: var(--tape); }
+  .stat-rows { margin-top: 16px; }
+  .stat {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--olive-3);
+  }
+  .stat span:first-child { color: var(--khaki-dim); }
+  .stat span:last-child { font-weight: 600; text-align: right; }
+  .note { color: var(--khaki-dim); font-size: 15px; margin-top: 12px; }
+
+  /* Units */
+  .toggle { display: inline-flex; border: 1px solid var(--olive-3); border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+  .toggle button { background: none; border: 0; padding: 6px 14px; cursor: pointer; color: var(--khaki-dim); }
+  .toggle button[aria-pressed="true"] { background: var(--olive-3); color: var(--khaki); }
+  .unit-row { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--olive-3); }
+  .unit-row span:first-child { color: var(--khaki-dim); }
+  .unit-row span:last-child { font-size: 24px; font-weight: 600; }
+
+  /* Settings */
+  dialog {
+    background: var(--olive-2); color: var(--khaki); border: 1px solid var(--olive-3);
+    border-radius: 10px; padding: 20px; width: min(92vw, 440px);
+  }
+  dialog::backdrop { background: rgba(10, 12, 8, .7); }
+  dialog h2 { margin: 0 0 14px; font-family: var(--stencil); font-weight: 700; font-size: 30px; }
+  .field { display: block; margin-bottom: 14px; }
+  .field span { display: block; font-size: 15px; color: var(--khaki-dim); margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; font: inherit; color: var(--khaki); background: var(--olive);
+    border: 1px solid var(--olive-3); border-radius: 6px; padding: 8px 10px;
+    color-scheme: dark;
+  }
+  .dlg-actions { display: flex; gap: 10px; justify-content: space-between; margin-top: 6px; }
+  .btn { border-radius: 6px; padding: 9px 16px; cursor: pointer; border: 1px solid var(--olive-3); background: none; }
+  .btn.primary { background: var(--tape); color: var(--olive); border-color: var(--tape); font-weight: 600; }
+  .err { color: #ff9b85; font-size: 15px; min-height: 1.2em; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="banner">
+    <button class="gear" id="openSettings" aria-label="Settings">Settings</button>
+    <p class="caption" id="caption">Left until the end of service</p>
+    <div class="clock" aria-live="off">
+      <div class="unit days"><span class="num" id="d">0</span><small>days</small></div>
+      <span class="sep">:</span>
+      <div class="unit"><span class="num" id="h">00</span><small>hours</small></div>
+      <span class="sep">:</span>
+      <div class="unit"><span class="num" id="m">00</span><small>min</small></div>
+      <span class="sep">:</span>
+      <div class="unit"><span class="num" id="s">00</span><small>sec</small></div>
+    </div>
+
+    <div class="pct-row">
+      <div class="pct" id="pct">0.000%</div>
+      <span>served</span>
+    </div>
+    <div class="tape" aria-hidden="true">
+      <div class="tape-used" id="tapeUsed"></div>
+      <div class="tape-ticks"></div>
+      <div class="tape-edge" id="tapeEdge"></div>
+    </div>
+  </header>
+
+  <nav class="menu" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="checkpoints">Checkpoints</button>
+    <button role="tab" aria-selected="false" data-tab="dismissals">Dismissals</button>
+    <button role="tab" aria-selected="false" data-tab="units">Units</button>
+  </nav>
+
+  <section class="panel" id="panel-checkpoints">
+    <div class="list-tools">
+      <span id="cpSummary"></span>
+      <button class="link-btn" id="jumpNow">Jump to now</button>
+    </div>
+    <div class="cp-list" id="cpList"></div>
+  </section>
+
+  <section class="panel" id="panel-dismissals" hidden>
+    <div class="big-figure" id="disLeft">0</div>
+    <p class="caption">dismissals left</p>
+    <div class="stat-rows">
+      <div class="stat"><span>Weekday</span><span id="disWeekday"></span></div>
+      <div class="stat"><span>Weekend</span><span id="disWeekend"></span></div>
+      <div class="stat"><span>New Year extra</span><span id="disNY"></span></div>
+      <div class="stat"><span>Used so far</span><span id="disUsed"></span></div>
+      <div class="stat"><span>Total for the whole service</span><span id="disTotal"></span></div>
+      <div class="stat"><span>Next weekday dismissal</span><span id="disNextWd"></span></div>
+      <div class="stat"><span>Next weekend dismissal</span><span id="disNextWe"></span></div>
+    </div>
+    <p class="note" id="disNote"></p>
+  </section>
+
+  <section class="panel" id="panel-units" hidden>
+    <div class="toggle" role="group" aria-label="Show time left or time served">
+      <button aria-pressed="true" data-mode="left">Left</button>
+      <button aria-pressed="false" data-mode="served">Served</button>
+    </div>
+    <div class="unit-row"><span>Months</span><span id="uMonths"></span></div>
+    <div class="unit-row"><span>Weeks</span><span id="uWeeks"></span></div>
+    <div class="unit-row"><span>Days</span><span id="uDays"></span></div>
+    <div class="unit-row"><span>Hours</span><span id="uHours"></span></div>
+    <div class="unit-row"><span>Minutes</span><span id="uMinutes"></span></div>
+    <div class="unit-row"><span>Seconds</span><span id="uSeconds"></span></div>
+  </section>
+</div>
+
+<dialog id="settings">
+  <h2>Settings</h2>
+  <label class="field"><span>Start of service</span><input type="datetime-local" id="inStart"></label>
+  <label class="field"><span>End of service</span><input type="datetime-local" id="inEnd"></label>
+  <label class="field"><span>Weekday dismissal day</span>
+    <select id="inWd">
+      <option value="1">Monday</option><option value="2">Tuesday</option>
+      <option value="3">Wednesday</option><option value="4">Thursday</option>
+      <option value="5">Friday</option>
+    </select>
+  </label>
+  <label class="field"><span>Weekend dismissal day</span>
+    <select id="inWe"><option value="6">Saturday</option><option value="0">Sunday</option></select>
+  </label>
+  <p class="err" id="setErr"></p>
+  <div class="dlg-actions">
+    <button class="btn" id="resetSettings">Reset to defaults</button>
+    <div style="display:flex;gap:10px">
+      <button class="btn" id="cancelSettings">Cancel</button>
+      <button class="btn primary" id="saveSettings">Save</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+/* ===== Easy-to-edit config ===== */
+const DEFAULTS = {
+  start: "2026-07-03T10:00",
+  end:   "2027-06-29T10:00",
+  weekdayDay: 3,   // 1=Mon ... 5=Fri
+  weekendDay: 0    // 6=Sat, 0=Sun
+};
+// Daily checkpoint times [hour, minute]. Add more lines here if needed.
+const CHECKPOINTS = [[6, 0], [6, 50], [13, 40], [18, 55]];
+const NEW_YEAR_EXTRA = 4;
+/* ================================= */
+
+const DAY = 86400000;
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const fmt = (n, d) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const dateLabel = d => `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+
+// Settings persist in the browser (works on GitHub Pages).
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem("serviceCountdown");
+    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+  } catch (e) {}
+  return { ...DEFAULTS };
+}
+function storeSettings(s) {
+  try { localStorage.setItem("serviceCountdown", JSON.stringify(s)); } catch (e) {}
+}
+
+let S = loadSettings();
+let START, END;
+function applySettings() {
+  START = new Date(S.start);
+  END = new Date(S.end);
+  buildCheckpoints();
+  tick(true);
+}
+
+/* ===== Percent helpers ===== */
+const pctAt = t => Math.min(100, Math.max(0, (t - START) / (END - START) * 100));
+
+/* ===== Checkpoint list ===== */
+let cpEntries = [];       // { t, el }
+let nowEl = null;
+let markerIdx = -1;
+
+function buildCheckpoints() {
+  const list = $("cpList");
+  list.innerHTML = "";
+  cpEntries = [];
+  markerIdx = -1;
+
+  const day = new Date(START); day.setHours(0, 0, 0, 0);
+  const lastDay = new Date(END); lastDay.setHours(0, 0, 0, 0);
+  const frag = document.createDocumentFragment();
+
+  while (day <= lastDay) {
+    const group = document.createElement("div");
+    group.className = "day";
+    const h = document.createElement("h3");
+    h.textContent = dateLabel(day);
+    group.appendChild(h);
+    let any = false;
+    for (const [hh, mm] of CHECKPOINTS) {
+      const t = new Date(day); t.setHours(hh, mm, 0, 0);
+      if (t < START || t > END) continue;
+      const row = document.createElement("div");
+      row.className = "cp";
+      row.innerHTML = `<span>${pad(hh)}:${pad(mm)}</span><span class="v">${pctAt(t).toFixed(3)}%</span>`;
+      group.appendChild(row);
+      cpEntries.push({ t: t.getTime(), el: row });
+      any = true;
+    }
+    if (any) frag.appendChild(group);
+    day.setDate(day.getDate() + 1);
+  }
+  list.appendChild(frag);
+
+  nowEl = document.createElement("div");
+  nowEl.className = "now";
+  nowEl.innerHTML = `<span id="nowLabel">Now</span><span id="nowPct"></span>`;
+  $("cpSummary").textContent = `${cpEntries.length} checkpoints`;
+}
+
+function placeMarker(now) {
+  let idx = cpEntries.findIndex(e => e.t > now);
+  if (idx === -1) idx = cpEntries.length;
+  if (idx === markerIdx) return false;
+  markerIdx = idx;
+  cpEntries.forEach((e, i) => e.el.classList.toggle("past", i < idx));
+  if (idx < cpEntries.length) {
+    const target = cpEntries[idx].el;
+    target.parentNode.insertBefore(nowEl, target);
+  } else if (cpEntries.length) {
+    const last = cpEntries[cpEntries.length - 1].el;
+    last.parentNode.appendChild(nowEl);
+  }
+  return true;
+}
+
+function scrollToNow(smooth) {
+  if (!nowEl || !nowEl.isConnected) return;
+  const list = $("cpList");
+  const top = nowEl.offsetTop - list.offsetTop - list.clientHeight / 2 + nowEl.clientHeight / 2;
+  list.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+}
+
+function updateNowRow(now) {
+  if (!nowEl) return;
+  const next = cpEntries[markerIdx];
+  let label = "Now";
+  if (next) {
+    const diff = next.t - now;
+    const h = Math.floor(diff / 3600000), m = Math.floor(diff / 60000) % 60;
+    label = `Now, next in ${h ? h + "h " : ""}${m}m`;
+  }
+  nowEl.firstChild.textContent = label;
+  nowEl.lastChild.textContent = pctAt(now).toFixed(3) + "%";
+}
+
+/* ===== Dismissals ===== */
+function countDow(from, to, dow) {
+  // Days with this weekday that start before `to` and haven't fully passed at `from`.
+  let n = 0, next = null;
+  const d = new Date(from); d.setHours(0, 0, 0, 0);
+  while (d < to) {
+    if (d.getDay() === dow && d.getTime() + DAY > from) {
+      n++;
+      if (!next) next = new Date(d);
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return { n, next };
+}
+function newYearCount(from, to) {
+  let n = 0;
+  for (let y = from.getFullYear(); y <= to.getFullYear() + 1; y++) {
+    const ny = new Date(y, 0, 1);
+    if (ny >= START && ny < END && ny.getTime() + DAY > from) n += NEW_YEAR_EXTRA;
+  }
+  return n;
+}
+function updateDismissals(now) {
+  const nowD = new Date(Math.max(now, START.getTime()));
+  const wd = countDow(nowD, END, +S.weekdayDay);
+  const we = countDow(nowD, END, +S.weekendDay);
+  const ny = newYearCount(nowD, END);
+  const totWd = countDow(START, END, +S.weekdayDay).n;
+  const totWe = countDow(START, END, +S.weekendDay).n;
+  const totNy = newYearCount(START, END);
+  const left = wd.n + we.n + ny, total = totWd + totWe + totNy;
+
+  $("disLeft").textContent = left;
+  $("disWeekday").textContent = wd.n;
+  $("disWeekend").textContent = we.n;
+  $("disNY").textContent = ny;
+  $("disUsed").textContent = total - left;
+  $("disTotal").textContent = total;
+  $("disNextWd").textContent = wd.next ? dateLabel(wd.next) : "None";
+  $("disNextWe").textContent = we.next ? dateLabel(we.next) : "None";
+  $("disNote").textContent =
+    `Counted as one every ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][S.weekdayDay]} ` +
+    `and one every ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][S.weekendDay]}, ` +
+    `plus ${NEW_YEAR_EXTRA} at New Year. A day counts as left until it's over. Change the days in Settings.`;
+}
+
+/* ===== Units ===== */
+let unitMode = "left";
+function addMonths(d, n) {
+  const r = new Date(d);
+  const day = r.getDate();
+  r.setDate(1);
+  r.setMonth(r.getMonth() + n);
+  const last = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
+  r.setDate(Math.min(day, last));
+  return r;
+}
+function monthsBetween(a, b) {
+  if (b <= a) return 0;
+  let m = 0;
+  while (addMonths(a, m + 1) <= b) m++;
+  const lo = addMonths(a, m), hi = addMonths(a, m + 1);
+  return m + (b - lo) / (hi - lo);
+}
+function updateUnits(now) {
+  const n = new Date(Math.min(Math.max(now, START.getTime()), END.getTime()));
+  const [a, b] = unitMode === "left" ? [n, END] : [START, n];
+  const ms = Math.max(0, b - a);
+  $("uMonths").textContent  = fmt(monthsBetween(a, b), 6);
+  $("uWeeks").textContent   = fmt(ms / (7 * DAY), 6);
+  $("uDays").textContent    = fmt(ms / DAY, 5);
+  $("uHours").textContent   = fmt(ms / 3600000, 4);
+  $("uMinutes").textContent = fmt(ms / 60000, 2);
+  $("uSeconds").textContent = fmt(ms / 1000, 1);
+}
+
+/* ===== Main tick ===== */
+let activeTab = "checkpoints";
+function tick(forceScroll) {
+  const now = Date.now();
+
+  let left = Math.max(0, END - Math.max(now, START.getTime()));
+  if (now < START) left = END - START;
+  const totalSec = Math.floor(left / 1000);
+  $("d").textContent = Math.floor(totalSec / 86400);
+  $("h").textContent = pad(Math.floor(totalSec / 3600) % 24);
+  $("m").textContent = pad(Math.floor(totalSec / 60) % 60);
+  $("s").textContent = pad(totalSec % 60);
+  $("caption").textContent =
+    now >= END ? "Service complete" :
+    now < START ? `Service hasn't started yet, starts ${dateLabel(START)}` :
+    "Left until the end of service";
+
+  const p = pctAt(now);
+  $("pct").textContent = p.toFixed(3) + "%";
+  $("tapeUsed").style.width = p + "%";
+  $("tapeEdge").style.left = `calc(${p}% - 1px)`;
+
+  const moved = placeMarker(now);
+  updateNowRow(now);
+  if ((moved || forceScroll) && activeTab === "checkpoints") scrollToNow(false);
+
+  if (activeTab === "dismissals") updateDismissals(now);
+  if (activeTab === "units") updateUnits(now);
+}
+
+/* ===== UI wiring ===== */
+document.querySelectorAll(".menu button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    activeTab = btn.dataset.tab;
+    document.querySelectorAll(".menu button").forEach(b => b.setAttribute("aria-selected", b === btn));
+    document.querySelectorAll(".panel").forEach(p => p.hidden = p.id !== "panel-" + activeTab);
+    tick(activeTab === "checkpoints");
+  });
+});
+$("jumpNow").addEventListener("click", () => scrollToNow(true));
+
+document.querySelectorAll(".toggle button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    unitMode = btn.dataset.mode;
+    document.querySelectorAll(".toggle button").forEach(b => b.setAttribute("aria-pressed", b === btn));
+    tick(false);
+  });
+});
+
+const dlg = $("settings");
+function fillSettings(s) {
+  $("inStart").value = s.start; $("inEnd").value = s.end;
+  $("inWd").value = s.weekdayDay; $("inWe").value = s.weekendDay;
+  $("setErr").textContent = "";
+}
+$("openSettings").addEventListener("click", () => { fillSettings(S); dlg.showModal(); });
+$("cancelSettings").addEventListener("click", () => dlg.close());
+$("resetSettings").addEventListener("click", () => fillSettings(DEFAULTS));
+$("saveSettings").addEventListener("click", () => {
+  const next = {
+    start: $("inStart").value, end: $("inEnd").value,
+    weekdayDay: +$("inWd").value, weekendDay: +$("inWe").value
+  };
+  if (!next.start || !next.end) { $("setErr").textContent = "Enter both a start and an end date."; return; }
+  if (new Date(next.end) <= new Date(next.start)) { $("setErr").textContent = "The end has to be after the start."; return; }
+  S = next; storeSettings(S); dlg.close(); applySettings();
+});
+
+// Always fresh: recompute from the real clock every tick and whenever the page comes back into view.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(true); });
+window.addEventListener("pageshow", () => tick(true));
+
+applySettings();
+setInterval(() => tick(false), 100);
+</script>
+</body>
+</html>
