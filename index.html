@@ -201,13 +201,14 @@
     <div class="big-figure" id="disLeft">0</div>
     <p class="caption">dismissals left</p>
     <div class="stat-rows">
-      <div class="stat"><span>Weekday</span><span id="disWeekday"></span></div>
-      <div class="stat"><span>Weekend</span><span id="disWeekend"></span></div>
-      <div class="stat"><span>New Year extra</span><span id="disNY"></span></div>
+      <div class="stat"><span>Time left in dismissals</span><span id="disTimeLeft"></span></div>
+      <div class="stat"><span>Share of the time left</span><span id="disShareLeft"></span></div>
+      <div class="stat"><span>Time left on base</span><span id="disOnBase"></span></div>
+      <div class="stat"><span>Next dismissal</span><span id="disNext"></span></div>
+      <div class="stat"><span>24-hour dismissals left</span><span id="dis24"></span></div>
+      <div class="stat"><span>38-hour dismissals left</span><span id="dis38"></span></div>
       <div class="stat"><span>Used so far</span><span id="disUsed"></span></div>
-      <div class="stat"><span>Total for the whole service</span><span id="disTotal"></span></div>
-      <div class="stat"><span>Next weekday dismissal</span><span id="disNextWd"></span></div>
-      <div class="stat"><span>Next weekend dismissal</span><span id="disNextWe"></span></div>
+      <div class="stat"><span>Whole service in dismissals</span><span id="disTotal"></span></div>
     </div>
     <p class="note" id="disNote"></p>
   </section>
@@ -230,14 +231,7 @@
   <h2>Settings</h2>
   <label class="field"><span>Start of service</span><input type="datetime-local" id="inStart"></label>
   <label class="field"><span>End of service</span><input type="datetime-local" id="inEnd"></label>
-  <label class="field"><span>Weekday dismissal day</span>
-    <select id="inWd">
-      <option value="1">Monday</option><option value="2">Tuesday</option>
-      <option value="3">Wednesday</option><option value="4">Thursday</option>
-      <option value="5">Friday</option>
-    </select>
-  </label>
-  <label class="field"><span>Weekend dismissal day</span>
+  <label class="field"><span>Dismissal day</span>
     <select id="inWe"><option value="6">Saturday</option><option value="0">Sunday</option></select>
   </label>
   <p class="err" id="setErr"></p>
@@ -255,12 +249,20 @@
 const DEFAULTS = {
   start: "2026-07-03T10:00",
   end:   "2027-06-29T10:00",
-  weekdayDay: 3,   // 1=Mon ... 5=Fri
-  weekendDay: 0    // 6=Sat, 0=Sun
+  weekendDay: 0    // dismissal day: 6=Sat, 0=Sun
 };
-// Daily checkpoint times [hour, minute]. Add more lines here if needed.
-const CHECKPOINTS = [[6, 0], [6, 50], [13, 40], [18, 55], [22, 0]];
-const NEW_YEAR_EXTRA = 4;
+// Checkpoint times [hour, minute]. Keys: 5=Fri, 6=Sat, 0=Sun; "weekday" = Mon–Thu.
+const CHECKPOINTS = {
+  weekday: [[6, 0], [6, 50], [13, 40], [18, 55]],
+  5: [[6, 0], [6, 50], [13, 40], [18, 55], [22, 30]],
+  6: [[6, 30], [6, 50], [13, 40], [18, 55], [23, 0]],
+  0: [[7, 0], [7, 30], [13, 30], [18, 55], [22, 0]]
+};
+const timesFor = dow => CHECKPOINTS[dow] || CHECKPOINTS.weekday;
+// Dismissal length: 24 h before LONG_FROM, 38 h on or after it.
+const SHORT_HOURS = 24;
+const LONG_HOURS = 38;
+const LONG_FROM = "2026-11-28T00:00";
 /* ================================= */
 
 const DAY = 86400000;
@@ -317,7 +319,7 @@ function buildCheckpoints() {
     h.textContent = dateLabel(day);
     group.appendChild(h);
     let any = false;
-    for (const [hh, mm] of CHECKPOINTS) {
+    for (const [hh, mm] of timesFor(day.getDay())) {
       const t = new Date(day); t.setHours(hh, mm, 0, 0);
       if (t < START || t > END) continue;
       const row = document.createElement("div");
@@ -375,49 +377,44 @@ function updateNowRow(now) {
 }
 
 /* ===== Dismissals ===== */
-function countDow(from, to, dow) {
-  // Days with this weekday that start before `to` and haven't fully passed at `from`.
-  let n = 0, next = null;
-  const d = new Date(from); d.setHours(0, 0, 0, 0);
-  while (d < to) {
-    if (d.getDay() === dow && d.getTime() + DAY > from) {
-      n++;
-      if (!next) next = new Date(d);
-    }
+function dismissalDays(from) {
+  // Dismissal days within the service that haven't fully passed at `from`.
+  const out = [];
+  const d = new Date(START); d.setHours(0, 0, 0, 0);
+  while (d < END) {
+    if (d.getDay() === +S.weekendDay && d.getTime() + DAY > from) out.push(new Date(d));
     d.setDate(d.getDate() + 1);
   }
-  return { n, next };
+  return out;
 }
-function newYearCount(from, to) {
-  let n = 0;
-  for (let y = from.getFullYear(); y <= to.getFullYear() + 1; y++) {
-    const ny = new Date(y, 0, 1);
-    if (ny >= START && ny < END && ny.getTime() + DAY > from) n += NEW_YEAR_EXTRA;
-  }
-  return n;
-}
-function updateDismissals(now) {
-  const nowD = new Date(Math.max(now, START.getTime()));
-  const wd = countDow(nowD, END, +S.weekdayDay);
-  const we = countDow(nowD, END, +S.weekendDay);
-  const ny = newYearCount(nowD, END);
-  const totWd = countDow(START, END, +S.weekdayDay).n;
-  const totWe = countDow(START, END, +S.weekendDay).n;
-  const totNy = newYearCount(START, END);
-  const left = wd.n + we.n + ny, total = totWd + totWe + totNy;
+const hoursFor = d => d >= new Date(LONG_FROM) ? LONG_HOURS : SHORT_HOURS;
+const sumHours = list => list.reduce((a, d) => a + hoursFor(d), 0);
+const dh = h => `${Math.floor(h / 24)}d ${Math.round(h % 24)}h`;
 
-  $("disLeft").textContent = left;
-  $("disWeekday").textContent = wd.n;
-  $("disWeekend").textContent = we.n;
-  $("disNY").textContent = ny;
-  $("disUsed").textContent = total - left;
-  $("disTotal").textContent = total;
-  $("disNextWd").textContent = wd.next ? dateLabel(wd.next) : "None";
-  $("disNextWe").textContent = we.next ? dateLabel(we.next) : "None";
+function updateDismissals(now) {
+  const from = Math.max(now, START.getTime());
+  const all = dismissalDays(START.getTime());
+  const left = dismissalDays(from);
+  const hLeft = sumHours(left), hAll = sumHours(all);
+  const n38 = left.filter(d => hoursFor(d) === LONG_HOURS).length;
+  const remainingH = Math.max(0, END - from) / 3600000;
+  const serviceH = (END - START) / 3600000;
+  const onBaseH = Math.max(0, remainingH - hLeft);
+
+  $("disLeft").textContent = left.length;
+  $("disTimeLeft").textContent = `${hLeft.toLocaleString("en-US")} h (${dh(hLeft)})`;
+  $("disShareLeft").textContent = remainingH ? (hLeft / remainingH * 100).toFixed(3) + "%" : "0%";
+  $("disOnBase").textContent = `${dh(onBaseH)} (${fmt(onBaseH, 1)} h)`;
+  $("disNext").textContent = left[0] ? `${dateLabel(left[0])}, ${hoursFor(left[0])} h` : "None";
+  $("dis24").textContent = left.length - n38;
+  $("dis38").textContent = n38;
+  $("disUsed").textContent = `${all.length - left.length} (${(hAll - hLeft).toLocaleString("en-US")} h)`;
+  $("disTotal").textContent =
+    `${all.length} (${hAll.toLocaleString("en-US")} h), ${(hAll / serviceH * 100).toFixed(3)}%`;
   $("disNote").textContent =
-    `Counted as one every ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][S.weekdayDay]} ` +
-    `and one every ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][S.weekendDay]}, ` +
-    `plus ${NEW_YEAR_EXTRA} at New Year. A day counts as left until it's over. Change the days in Settings.`;
+    `One dismissal every ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][S.weekendDay]}: ` +
+    `${SHORT_HOURS} h until ${dateLabel(new Date(LONG_FROM))}, ${LONG_HOURS} h from then on. ` +
+    `A dismissal counts as left until its day is over. Change the day in Settings.`;
 }
 
 /* ===== Units ===== */
@@ -502,7 +499,7 @@ document.querySelectorAll(".toggle button").forEach(btn => {
 const dlg = $("settings");
 function fillSettings(s) {
   $("inStart").value = s.start; $("inEnd").value = s.end;
-  $("inWd").value = s.weekdayDay; $("inWe").value = s.weekendDay;
+  $("inWe").value = s.weekendDay;
   $("setErr").textContent = "";
 }
 $("openSettings").addEventListener("click", () => { fillSettings(S); dlg.showModal(); });
@@ -511,7 +508,7 @@ $("resetSettings").addEventListener("click", () => fillSettings(DEFAULTS));
 $("saveSettings").addEventListener("click", () => {
   const next = {
     start: $("inStart").value, end: $("inEnd").value,
-    weekdayDay: +$("inWd").value, weekendDay: +$("inWe").value
+    weekendDay: +$("inWe").value
   };
   if (!next.start || !next.end) { $("setErr").textContent = "Enter both a start and an end date."; return; }
   if (new Date(next.end) <= new Date(next.start)) { $("setErr").textContent = "The end has to be after the start."; return; }
